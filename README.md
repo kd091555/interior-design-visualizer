@@ -10,7 +10,53 @@ short_description: Visualize realistic room renovations from a photograph
 
 # Interior Design Visualizer
 
-A portable Flask application for room analysis and AI renovation visualization.
+A Flask portfolio project that helps home buyers and property investors explore
+renovation choices before committing to materials or construction. Upload a room,
+describe a change, optionally paint the area to edit, and review generated concepts.
+
+**Status:** working prototype with mocked integration tests. Live model access,
+image quality, and production deployments need separate validation. No hosted demo
+is included with this repository.
+
+## Engineering scope
+
+The project brings together a Flask API, a browser interface written in plain
+JavaScript, and server-side AI integrations. The application code covers image and
+mask validation, request routing, streamed progress, explicit branching from a
+generated result, result caching, quotas, and output retention. The underlying
+models are external services; this project does not train its own model.
+
+Implementation highlights for a code review:
+
+- [Request pipeline](app.py): authentication, CSRF checks, image validation,
+  moderation, intent routing, estimated spending reservations, and NDJSON responses.
+- [Browser workflow](templates/index.html): canvas mask editing, incremental stream
+  parsing, safe text rendering, local project plans, and result selection.
+- [Regression tests](tests/test_security.py): mocked provider responses exercise
+  success, rejection, cache reuse, image editing, and streaming failures.
+- [Deployment](Dockerfile): an unprivileged container, with optional Redis and
+  S3-compatible storage through Docker Compose or Kubernetes manifests.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    UI[Browser: photo, mask, prompt] --> API[Flask: authentication and validation]
+    API --> Cache{Cached result?}
+    Cache -->|miss| Guard[Moderation, intent, quotas]
+    Guard --> Provider[Server-side AI provider]
+    Provider --> Output[Output moderation and edit similarity check]
+    Output --> Store[Local or S3 image storage]
+    Store --> Stream[NDJSON status and result]
+    Cache -->|hit| Stream
+    Stream --> UI
+```
+
+Provider credentials stay on the server. Redis can share sessions, quotas, and
+caches across workers; without it, sessions use signed cookies and counters/caches
+are local to the process. Progress messages describe processing stages.
+
+## Interface preview
 
 | Renovation visualizer | Project planning | Preliminary costs |
 |---|---|---|
@@ -52,6 +98,9 @@ These are planned marketplace capabilities, not features available in the curren
 python -m venv .venv
 ```
 
+Activate it with `.\.venv\Scripts\Activate.ps1` on Windows, or
+`source .venv/bin/activate` on macOS/Linux. Use Python 3.10 or newer.
+
 3. Install dependencies and configure secrets:
 
 ```powershell
@@ -69,10 +118,11 @@ Open `http://localhost:5000`. In HTTPS production deployments, also set
 Security defaults include authentication, CSRF protection, multimodal moderation,
 request and image limits, security headers, an eight-hour session lifetime, and
 rate limiting. Redis-backed sessions and rate limits activate when `REDIS_URL` is
-set; otherwise the app uses local process memory.
+set; otherwise sessions use signed cookies and rate limits use local process memory.
 
-Prompts and source photos are moderated before inference. Direct safeguard-override
-and secret-extraction attempts are rejected. Generated text and images are moderated
+Prompts and source photos are moderated before inference. A local rule set rejects
+recognized safeguard-override and secret-extraction patterns; it is not a complete
+prompt-injection defense. Generated text and images are moderated
 again before they are returned or written to storage; moderation failures fail closed.
 
 Provider calls use bounded timeouts and retries configured by
@@ -80,7 +130,7 @@ Provider calls use bounded timeouts and retries configured by
 and request references without exposing provider responses, credentials, or stack
 traces. Failed browser requests preserve the prompt so the user can retry safely.
 
-Each authenticated account (or anonymous browser when public access is enabled) has
+The shared showcase account (or anonymous browser when public access is enabled) has
 minute and daily request quotas. Uncached AI calls also reserve a conservative cost
 estimate against `USER_DAILY_SPEND_LIMIT_USD` before contacting the provider. Redis
 makes quota reservations atomic across workers. The estimates are configurable because
@@ -161,12 +211,15 @@ image, create a new scene, or ask a clarification question instead of guessing.
 Ambiguous classifications are cached for `INTENT_CACHE_TTL_SECONDS`.
 
 - **Analyze** uses `gpt-6-astra` without an image-generation tool.
-- **Fast Preview / Fast Edit** uses `gpt-image-2.5-flare` through Astra's
-  Responses API image tool.
-- **High Quality / High Quality Edit** uses `gpt-image-2.5-sunburst` through
-  the dedicated Image Edit API at high quality. The original uploaded room
-  remains the immutable source for every follow-up; generated results never replace it
-  automatically.
+- **Fast Preview / Fast Edit** selects `gpt-image-2.5-flare`.
+- **High Quality / High Quality Edit** selects `gpt-image-2.5-sunburst`.
+- With a source photo, both image modes use the direct Image Edit API. Without a
+  source photo, generation uses the Responses API image tool. Results only become
+  the next editing source when the user selects **Edit this result**.
+
+These are identifiers configured in the source, not a guarantee of availability
+for another account. Confirm model access and SDK compatibility before live use;
+the offline tests replace provider calls with mocks.
 
 Direct edits pass through a local structural-similarity gate before moderation and
 storage. It compares aspect ratio, grayscale layout, gradients, and edges against the
@@ -189,11 +242,43 @@ losing the original-room reference.
 
 Vertex AI and Anthropic remain available as alternative analysis providers.
 
-## Public beta launch checklist
+## Verification
 
-- [ ] Finish UI and mobile usability.
-- [x] Verify per-user rate limits and application spending controls.
-- [x] Publish a privacy notice and automatically delete generated images.
-- [x] Complete reliable error-handling tests.
-- [x] Run abuse and moderation tests.
-- [x] Add visible Beta and AI-output disclaimers.
+Run the offline suite from the repository root in the activated environment:
+
+```powershell
+$env:PYTHON_DOTENV_DISABLED = "1"
+$env:OPENAI_API_KEY = "test-key"
+$env:APP_USERNAME = "admin"
+$env:APP_PASSWORD = "test-password"
+$env:APP_SECRET_KEY = "test-secret-key"
+$env:REDIS_URL = ""
+$env:S3_BUCKET = ""
+python -m py_compile app.py
+python -m unittest discover -s tests -v
+```
+
+Use a separate terminal for this command so test credentials do not replace the
+environment used to run the app. These tests mock AI services and do not need paid
+API calls. See [validation notes](docs/VALIDATION.md) for coverage and limitations.
+
+## Known limitations
+
+- Authentication is a shared showcase login, not individual customer accounts.
+  Generated-image routes require login but do not enforce per-image ownership.
+- Masks and similarity checks guide edits; they do not guarantee that architecture
+  or every unselected pixel is preserved. The similarity score is a heuristic.
+- Spending reservations use estimates, not provider invoices. Moderation and intent
+  routing can run before the generation budget reservation. Anonymous browser
+  identities can be reset, so quotas are not a complete abuse or billing defense.
+- Local counters reset on restart and are not shared between workers. Redis and
+  object-storage integration need deployment-level testing.
+- Project plans live in browser storage. Cost estimates use illustrative constants,
+  not verified local contractor prices. There is no customer project database.
+- Live AI output quality, provider compatibility, mobile interactions, and deployment
+  manifests have not been validated by the offline suite.
+
+## License
+
+[MIT](LICENSE). Third-party dependencies retain their own licenses. No private room
+photos or evaluation outputs are included in the published repository.

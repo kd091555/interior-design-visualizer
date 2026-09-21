@@ -181,7 +181,10 @@ class SecurityTests(unittest.TestCase):
 
     def test_readme_contains_showcase_media_and_marketplace_roadmap(self):
         readme = Path("README.md").read_text(encoding="utf-8")
-        self.assertIn("docs/media/product-walkthrough.gif", readme)
+        for filename in ("visualizer.png", "project-plan.png", "cost-estimate.png"):
+            media_path = Path("docs/media") / filename
+            self.assertIn(media_path.as_posix(), readme)
+            self.assertTrue(media_path.is_file())
         self.assertIn("## Roadmap", readme)
         self.assertIn("Verified contractor", readme)
 
