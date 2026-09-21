@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: redis}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: redis}
+  template:
+    metadata:
+      labels: {app: redis}
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["redis-server", "--appendonly", "yes"]
+          ports: [{containerPort: 6379}]
+          volumeMounts: [{name: data, mountPath: /data}]
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: redis-data}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: redis}
+spec:
+  selector: {app: redis}
+  ports: [{port: 6379}]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: redis-data}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 1Gi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: minio}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: minio}
+  template:
+    metadata:
+      labels: {app: minio}
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:latest
+          args: ["server", "/data"]
+          envFrom: [{secretRef: {name: interior-secrets}}]
+          ports: [{containerPort: 9000}]
+          volumeMounts: [{name: data, mountPath: /data}]
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: object-data}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: minio}
+spec:
+  selector: {app: minio}
+  ports: [{port: 9000}]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: object-data}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 10Gi}

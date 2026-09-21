@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in</title>
+  <style>
+    body{font-family:system-ui,sans-serif;background:#0f1117;color:#e6e9f0;display:grid;place-items:center;min-height:100vh;margin:0}
+    form{width:min(360px,90vw);background:#1a1d27;padding:28px;border:1px solid #2d3348;border-radius:14px}
+    input,button{width:100%;box-sizing:border-box;margin-top:10px;padding:12px;border-radius:8px;border:1px solid #2d3348}
+    button{background:#6c8cff;color:white;cursor:pointer}.error{color:#ff9b9b}
+  </style>
+</head>
+<body>
+  <form method="post">
+    <h1>Interior Visualizer</h1>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Username<input name="username" autocomplete="username" required></label>
+    <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+    <button type="submit">Sign in</button>
+  </form>
+</body>
+</html>

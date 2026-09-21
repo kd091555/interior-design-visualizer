@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: interior-config
+data:
+  PORT: "7860"
+  COOKIE_SECURE: "true"
+  TRUST_PROXY_HOPS: "1"
+  ALLOW_PUBLIC_ACCESS: "false"
+  DAILY_REQUEST_LIMIT: "50"
+  IMAGE_RETENTION_HOURS: "24"
+  REDIS_URL: redis://redis:6379/0
+  S3_ENDPOINT_URL: http://minio:9000
+  S3_BUCKET: generated-images
+  S3_PREFIX: generated/
+  S3_REGION: us-east-1
+  S3_AUTO_CREATE: "true"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: interior-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: interior-app}
+  template:
+    metadata:
+      labels: {app: interior-app}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: app
+          image: ghcr.io/your-name/interior-visualizer:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 7860
+          envFrom:
+            - configMapRef: {name: interior-config}
+            - secretRef: {name: interior-secrets}
+          readinessProbe:
+            httpGet: {path: /health/ready, port: 7860}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health/live, port: 7860}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: interior-app
+spec:
+  selector: {app: interior-app}
+  ports:
+    - port: 80
+      targetPort: 7860

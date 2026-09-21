@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.venv/
+venv/
+generated_images/*
+!generated_images/.gitkeep
+evaluation/results/
+evaluation/diagnostic/
+
+# Local walkthrough assets are not part of the published project.
+docs/media/product-walkthrough.gif
+docs/voiceover-script.txt
